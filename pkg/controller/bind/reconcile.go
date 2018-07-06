@@ -362,7 +362,7 @@ func RemoveFinalizer(obj runtimetypes.Object, value string) ([]string, error) {
 func newEventTypeNonControllerRef(et *feedsv1alpha1.EventType) *metav1.OwnerReference {
 	blockOwnerDeletion := true
 	isController := false
-	revRef := metav1.NewControllerRef(et, eventTypeControllerKind)
+	revRef := metav1.NewControllerRef(et, feedsv1alpha1.SchemeGroupVersion.WithKind("EventType"))
 	revRef.BlockOwnerDeletion = &blockOwnerDeletion
 	revRef.Controller = &isController
 	return revRef
