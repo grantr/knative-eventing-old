@@ -54,7 +54,6 @@ func ProvideController(mrg manager.Manager) (controller.Controller, error) {
 	// Setup a new controller to Reconcile Routes
 	c, err := controller.New(controllerAgentName, mrg, controller.Options{
 		Reconciler: &reconciler{
-			client:     mrg.GetClient(),
 			recorder:   mrg.GetRecorder(controllerAgentName),
 			kubeclient: kubeclient,
 		},
@@ -69,4 +68,9 @@ func ProvideController(mrg manager.Manager) (controller.Controller, error) {
 	}
 
 	return c, nil
+}
+
+func (r *reconciler) InjectClient(c client.Client) error {
+	r.client = c
+	return nil
 }
