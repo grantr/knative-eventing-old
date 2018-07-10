@@ -19,6 +19,7 @@ package v1alpha1
 import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 
 	"k8s.io/apimachinery/pkg/runtime"
 )
@@ -166,6 +167,8 @@ type BindStatus struct {
 	// This is specific to each Binding. Opaque to platform, only consumed
 	// by the actual trigger actuator.
 	// NOTE: experimental field.
+	//TODO(grantr) this should be a string. Since it's opaque to us, there's no
+	// reason it needs to be json.
 	BindContext *runtime.RawExtension `json:"bindContext,omitempty"`
 }
 
@@ -202,6 +205,15 @@ type BindList struct {
 	Items []Bind `json:"items"`
 }
 
+func (bs *BindStatus) GetCondition(t BindConditionType) *BindCondition {
+	for _, cond := range bs.Conditions {
+		if cond.Type == t {
+			return &cond
+		}
+	}
+	return nil
+}
+
 func (bs *BindStatus) SetCondition(new *BindCondition) {
 	if new == nil {
 		return
@@ -226,4 +238,61 @@ func (bs *BindStatus) RemoveCondition(t BindConditionType) {
 		}
 	}
 	bs.Conditions = conditions
+}
+
+func (bs *BindStatus) InitializeConditions() {
+	for _, cond := range []BindConditionType{
+		BindComplete,
+		BindFailed,
+		BindInvalid,
+	} {
+		if bc := bs.GetCondition(cond); bc == nil {
+			bs.SetCondition(&BindCondition{
+				Type:   cond,
+				Status: corev1.ConditionUnknown,
+			})
+		}
+	}
+}
+
+// AddFinalizer adds the given value to the list of finalizers if it doesn't
+// already exist.
+func (b *Bind) AddFinalizer(value string) {
+	finalizers := sets.NewString(b.GetFinalizers()...)
+	finalizers.Insert(value)
+	b.SetFinalizers(finalizers.List())
+}
+
+// RemoveFinalizer removes the given value from the list of finalizers if it
+// exists.
+func (b *Bind) RemoveFinalizer(value string) {
+	finalizers := sets.NewString(b.GetFinalizers()...)
+	finalizers.Delete(value)
+	b.SetFinalizers(finalizers.List())
+}
+
+// HasFinalizer returns true if a finalizer exists, or false otherwise.
+func (b *Bind) HasFinalizer(value string) bool {
+	for _, f := range b.GetFinalizers() {
+		if f == value {
+			return true
+		}
+	}
+	return false
+}
+
+// SetOwnerReference adds the given owner reference to the list of owner
+// references, replacing the corresponding owner reference if it exists.
+func (b *Bind) SetOwnerReference(or *metav1.OwnerReference) {
+	var refs []metav1.OwnerReference
+
+	for _, ref := range b.GetOwnerReferences() {
+		if !(ref.APIVersion == or.APIVersion &&
+			ref.Kind == or.Kind &&
+			ref.Name == or.Name) {
+			refs = append(refs, ref)
+		}
+	}
+	refs = append(refs, *or)
+	b.SetOwnerReferences(refs)
 }

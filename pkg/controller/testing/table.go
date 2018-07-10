@@ -19,13 +19,17 @@ package testing
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -134,27 +138,48 @@ func (tc *TestCase) VerifyResult(result reconcile.Result) error {
 	return nil
 }
 
+type stateErrors struct {
+	errors []error
+}
+
+func (se stateErrors) Error() string {
+	msgs := make([]string, 0)
+	for _, err := range se.errors {
+		msgs = append(msgs, err.Error())
+	}
+	return strings.Join(msgs, "\n")
+}
+
 // VerifyWantPresent verifies that the client contains all the objects expected
 // to be present after reconciliation.
 func (tc *TestCase) VerifyWantPresent(c client.Client) error {
-	//TODO(grantr) return all errors
+	var errs stateErrors
 	for _, wp := range tc.WantPresent {
-		o := wp.DeepCopyObject()
+		o, err := scheme.Scheme.New(wp.GetObjectKind().GroupVersionKind())
+		if err != nil {
+			errs.errors = append(errs.errors, fmt.Errorf("Error creating a copy of %T: %v", wp, err))
+		}
 		acc, err := meta.Accessor(wp)
 		if err != nil {
-			return fmt.Errorf("Error getting accessor for %v", wp)
+			errs.errors = append(errs.errors, fmt.Errorf("Error getting accessor for %#v %v", wp, err))
 		}
 		err = c.Get(context.TODO(), client.ObjectKey{Namespace: acc.GetNamespace(), Name: acc.GetName()}, o)
 		if err != nil {
 			if apierrors.IsNotFound(err) {
-				return fmt.Errorf("Want present, got absent %v", acc)
+				errs.errors = append(errs.errors, fmt.Errorf("Want present %T %s/%s, got absent", wp, acc.GetNamespace(), acc.GetName()))
+			} else {
+				errs.errors = append(errs.errors, fmt.Errorf("Error getting %T %s/%s: %v", wp, acc.GetNamespace(), acc.GetName(), err))
 			}
-			return fmt.Errorf("Error getting %v: %v", acc, err)
 		}
 
-		if diff := cmp.Diff(wp, o); diff != "" {
-			return fmt.Errorf("Unexpected present object (-want +got) %v", diff)
+		// Ignore TypeMeta, since the objects created by the controller won't have
+		// it
+		if diff := cmp.Diff(wp, o, cmpopts.IgnoreTypes(metav1.TypeMeta{})); diff != "" {
+			errs.errors = append(errs.errors, fmt.Errorf("Unexpected present %T %s/%s (-want +got):\n%v", wp, acc.GetNamespace(), acc.GetName(), diff))
 		}
+	}
+	if len(errs.errors) > 0 {
+		return errs
 	}
 	return nil
 }
@@ -162,20 +187,22 @@ func (tc *TestCase) VerifyWantPresent(c client.Client) error {
 // VerifyWantAbsent verifies that the client does not contain any of the objects
 // expected to be absent after reconciliation.
 func (tc *TestCase) VerifyWantAbsent(c client.Client) error {
-	//TODO(grantr) return all errors
+	var errs stateErrors
 	for _, wa := range tc.WantAbsent {
-		o := wa.DeepCopyObject()
 		acc, err := meta.Accessor(wa)
 		if err != nil {
-			return fmt.Errorf("Error getting accessor for %v", wa)
+			errs.errors = append(errs.errors, fmt.Errorf("Error getting accessor for %#v %v", wa, err))
 		}
-		err = c.Get(context.TODO(), client.ObjectKey{Namespace: acc.GetNamespace(), Name: acc.GetName()}, o)
+		err = c.Get(context.TODO(), client.ObjectKey{Namespace: acc.GetNamespace(), Name: acc.GetName()}, wa)
 		if err == nil {
-			return fmt.Errorf("Want absent, got present %v", acc)
+			errs.errors = append(errs.errors, fmt.Errorf("Want absent, got present %T %s/%s", wa, acc.GetNamespace(), acc.GetName()))
 		}
 		if !apierrors.IsNotFound(err) {
-			return fmt.Errorf("Error getting %v: %v", acc, err)
+			errs.errors = append(errs.errors, fmt.Errorf("Error getting %T %s/%s: %v", wa, acc.GetNamespace(), acc.GetName(), err))
 		}
+	}
+	if len(errs.errors) > 0 {
+		return errs
 	}
 	return nil
 }

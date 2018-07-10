@@ -146,6 +146,7 @@
   name = "github.com/google/go-cmp"
   packages = [
     "cmp",
+    "cmp/cmpopts",
     "cmp/internal/diff",
     "cmp/internal/function",
     "cmp/internal/value"
@@ -685,11 +686,12 @@
     "storage/v1beta1"
   ]
   revision = "73d903622b7391f3312dcbac6483fed484e185f8"
-  version = "kubernetes-1.10.0"
+  version = "kubernetes-1.10.1"
 
 [[projects]]
   name = "k8s.io/apimachinery"
   packages = [
+    "pkg/api/equality",
     "pkg/api/errors",
     "pkg/api/meta",
     "pkg/api/resource",
@@ -736,7 +738,7 @@
     "third_party/forked/golang/reflect"
   ]
   revision = "302974c03f7e50f16561ba237db776ab93594ef6"
-  version = "kubernetes-1.10.0"
+  version = "kubernetes-1.10.1"
 
 [[projects]]
   name = "k8s.io/client-go"
@@ -923,7 +925,7 @@
     "pkg/util"
   ]
   revision = "7ead8f38b01cf8653249f5af80ce7b2c8aba12e2"
-  version = "kubernetes-1.10.0"
+  version = "kubernetes-1.10.1"
 
 [[projects]]
   branch = "master"
@@ -976,6 +978,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "0c4d251578556b00b3d22be60cdab29146e59235be65cab84b9a1f0f99580c88"
+  inputs-digest = "b9886cef3e1b7e11fc134251fa680572b1818085efd874f1b1f8ce9354047cc5"
   solver-name = "gps-cdcl"
   solver-version = 1

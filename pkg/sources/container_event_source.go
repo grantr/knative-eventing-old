@@ -49,18 +49,18 @@ type ContainerEventSource struct {
 	EventSourceSpec *v1alpha1.EventSourceSpec
 }
 
-func NewContainerEventSource(bind *v1alpha1.Bind, kubeclientset kubernetes.Interface, spec *v1alpha1.EventSourceSpec, namespace string, serviceAccountName string) EventSource {
+func NewContainerEventSource(bind *v1alpha1.Bind, kubeclientset kubernetes.Interface, spec *v1alpha1.EventSourceSpec) EventSource {
 	return &ContainerEventSource{
 		kubeclientset:      kubeclientset,
-		Namespace:          namespace,
-		ServiceAccountName: serviceAccountName,
+		Namespace:          bind.Namespace,
+		ServiceAccountName: bind.Spec.ServiceAccountName,
 		Binding:            bind,
 		EventSourceSpec:    spec,
 	}
 }
 
 func (t *ContainerEventSource) Bind(trigger EventTrigger, route string) (*BindContext, error) {
-	job, err := MakeJob(t.Binding, t.Namespace, t.ServiceAccountName, "binder", t.EventSourceSpec, Bind, trigger, route, BindContext{})
+	job, err := MakeJob(t.Binding, t.EventSourceSpec, Bind, trigger, route, BindContext{})
 	if err != nil {
 		glog.Errorf("failed to make job: %s", err)
 		return nil, err
@@ -78,7 +78,7 @@ func (t *ContainerEventSource) Bind(trigger EventTrigger, route string) (*BindCo
 }
 
 func (t *ContainerEventSource) Unbind(trigger EventTrigger, bindContext BindContext) error {
-	job, err := MakeJob(t.Binding, t.Namespace, t.ServiceAccountName, "binder", t.EventSourceSpec, Unbind, trigger, "", bindContext)
+	job, err := MakeJob(t.Binding, t.EventSourceSpec, Unbind, trigger, "", bindContext)
 	if err != nil {
 		glog.Errorf("failed to make job: %s", err)
 		return err
@@ -112,12 +112,12 @@ func (t *ContainerEventSource) run(job *batchv1.Job, parseLogs bool) (*BindConte
 			return nil, err
 		}
 
-		if isJobFailed(job) {
+		if IsJobFailed(job) {
 			glog.Errorf("event source job failed: %s", err)
 			return nil, fmt.Errorf("Job failed: %s", err)
 		}
 
-		if isJobComplete(job) {
+		if IsJobComplete(job) {
 			glog.Infof("event source job complete")
 
 			pods, err := t.getJobPods(job)
@@ -128,7 +128,7 @@ func (t *ContainerEventSource) run(job *batchv1.Job, parseLogs bool) (*BindConte
 			for _, p := range pods {
 				if p.Status.Phase == corev1.PodSucceeded {
 					glog.Infof("Pod succeeded: %s", p.Name)
-					if msg := getFirstTerminationMessage(&p); msg != "" {
+					if msg := GetFirstTerminationMessage(&p); msg != "" {
 						decodedContext, _ := base64.StdEncoding.DecodeString(msg)
 						glog.Infof("Decoded to %q", decodedContext)
 						var ret BindContext
@@ -177,7 +177,7 @@ func (t *ContainerEventSource) getJobPods(job *batchv1.Job) ([]corev1.Pod, error
 	return pods.Items, nil
 }
 
-func isJobFailed(job *batchv1.Job) bool {
+func IsJobFailed(job *batchv1.Job) bool {
 	for _, c := range job.Status.Conditions {
 		if c.Type == batchv1.JobFailed && c.Status == corev1.ConditionTrue {
 			return true
@@ -186,7 +186,7 @@ func isJobFailed(job *batchv1.Job) bool {
 	return false
 }
 
-func isJobComplete(job *batchv1.Job) bool {
+func IsJobComplete(job *batchv1.Job) bool {
 	for _, c := range job.Status.Conditions {
 		if c.Type == batchv1.JobComplete && c.Status == corev1.ConditionTrue {
 			return true
@@ -195,7 +195,7 @@ func isJobComplete(job *batchv1.Job) bool {
 	return false
 }
 
-func getFirstTerminationMessage(pod *corev1.Pod) string {
+func GetFirstTerminationMessage(pod *corev1.Pod) string {
 	for _, cs := range pod.Status.ContainerStatuses {
 		if cs.State.Terminated != nil && cs.State.Terminated.Message != "" {
 			return cs.State.Terminated.Message
