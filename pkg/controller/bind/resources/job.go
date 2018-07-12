@@ -76,7 +76,7 @@ func MakeJob(bind *feedsv1alpha1.Bind, source *feedsv1alpha1.EventSource, trigge
 
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:            BindJobName(bind),
+			Name:            JobName(bind),
 			Namespace:       bind.Namespace,
 			Labels:          labels,
 			OwnerReferences: []metav1.OwnerReference{*metav1.NewControllerRef(bind, feedsv1alpha1.SchemeGroupVersion.WithKind("Bind"))},
@@ -115,8 +115,18 @@ func makePodTemplate(bind *feedsv1alpha1.Bind, source *feedsv1alpha1.EventSource
 	}
 
 	var encodedBindContext string
-	if bind.Status.BindContext != nil {
-		encodedBindContext = base64.StdEncoding.EncodeToString(bind.Status.BindContext.Raw)
+	if rawExt := bind.Status.BindContext; rawExt != nil {
+		if rawExt.Raw != nil && len(rawExt.Raw) > 0 {
+			var ctx sources.BindContext
+			if err := json.Unmarshal(rawExt.Raw, &ctx.Context); err != nil {
+				return nil, err
+			}
+			marshaledCtx, err := json.Marshal(ctx)
+			if err != nil {
+				return nil, err
+			}
+			encodedBindContext = base64.StdEncoding.EncodeToString(marshaledCtx)
+		}
 	}
 
 	marshalledTrigger, err := json.Marshal(trigger)

@@ -25,7 +25,7 @@ import (
 // JobName returns the name of the job for the bind, taking into account whether
 // it's been deleted.
 func JobName(bind *feedsv1alpha1.Bind) string {
-	if bind.GetDeletionTimestamp() == nil {
+	if bind.GetDeletionTimestamp() != nil {
 		return UnbindJobName(bind)
 	}
 	return BindJobName(bind)

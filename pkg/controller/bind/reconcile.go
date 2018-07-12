@@ -144,9 +144,10 @@ func (r *reconciler) reconcileUnbindJob(bind *feedsv1alpha1.Bind) error {
 		err := r.client.Get(context.TODO(), client.ObjectKey{Namespace: bind.Namespace, Name: jobName}, job)
 		if !errors.IsNotFound(err) {
 			if err == nil {
-				// Delete the existing job and return an error
+				// Delete the existing job and return. When it's deleted, this Bind
+				// will be reconciled again.
 				r.client.Delete(context.TODO(), job)
-				err = fmt.Errorf("Previous bind job still exists")
+				return nil
 			}
 			return err
 		}
@@ -202,7 +203,7 @@ func (r *reconciler) updateOwnerReferences(u *feedsv1alpha1.Bind) error {
 	}
 
 	if !equality.Semantic.DeepEqual(bind.OwnerReferences, u.OwnerReferences) {
-		bind.ObjectMeta.OwnerReferences = u.ObjectMeta.OwnerReferences
+		bind.SetOwnerReferences(u.ObjectMeta.OwnerReferences)
 		return r.client.Update(context.TODO(), bind)
 	}
 	return nil
@@ -216,7 +217,7 @@ func (r *reconciler) updateFinalizers(u *feedsv1alpha1.Bind) error {
 	}
 
 	if !equality.Semantic.DeepEqual(bind.Finalizers, u.Finalizers) {
-		bind.ObjectMeta.Finalizers = u.ObjectMeta.Finalizers
+		bind.SetFinalizers(u.ObjectMeta.Finalizers)
 		return r.client.Update(context.TODO(), bind)
 	}
 	return nil
@@ -441,19 +442,23 @@ func (r *reconciler) getJobContext(job *batchv1.Job) (*sources.BindContext, erro
 }
 
 func (r *reconciler) getJobPods(job *batchv1.Job) ([]corev1.Pod, error) {
-	selector, err := metav1.LabelSelectorAsSelector(job.Spec.Selector)
-	if err != nil {
-		return nil, err
-	}
-
 	podList := &corev1.PodList{}
-	err = r.client.List(context.TODO(), &client.ListOptions{
-		LabelSelector: selector,
-		Namespace:     job.Namespace,
-	}, podList)
-	if err != nil {
+	listOptions := client.
+		InNamespace(job.Namespace).
+		MatchingLabels(job.Spec.Selector.MatchLabels)
+
+	//TODO this is here because the fake client needs it. Remove this when it's
+	// no longer needed.
+	listOptions.Raw = &metav1.ListOptions{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: corev1.SchemeGroupVersion.String(),
+			Kind:       "Pod",
+		},
+	}
+
+	if err := r.client.List(context.TODO(), listOptions, podList); err != nil {
 		return nil, err
 	}
 
-	return podList.Items, err
+	return podList.Items, nil
 }
