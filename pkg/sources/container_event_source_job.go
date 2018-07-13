@@ -63,20 +63,20 @@ const (
 )
 
 // MakeJob creates a Job to complete a bind or unbind operation.
-func MakeJob(bind *v1alpha1.Bind, namespace string, serviceAccountName string, jobName string, spec *v1alpha1.EventSourceSpec, op BindOperation, trigger EventTrigger, route string, bindContext BindContext) (*batchv1.Job, error) {
+func MakeJob(bind *v1alpha1.Bind, spec *v1alpha1.EventSourceSpec, op BindOperation, trigger EventTrigger, route string, bindContext BindContext) (*batchv1.Job, error) {
 	labels := map[string]string{
 		"app": "bindpod",
 	}
 
-	podTemplate, err := makePodTemplate(bind, namespace, serviceAccountName, jobName, spec, op, trigger, route, bindContext)
+	podTemplate, err := makePodTemplate(bind, spec, op, trigger, route, bindContext)
 	if err != nil {
 		return nil, err
 	}
 
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:            jobName,
-			Namespace:       namespace,
+			Name:            "binder",
+			Namespace:       bind.Namespace,
 			Labels:          labels,
 			OwnerReferences: []metav1.OwnerReference{*metav1.NewControllerRef(bind, v1alpha1.SchemeGroupVersion.WithKind("Bind"))},
 		},
@@ -87,7 +87,7 @@ func MakeJob(bind *v1alpha1.Bind, namespace string, serviceAccountName string, j
 }
 
 // makePodTemplate creates a pod template for a bind or unbind Job.
-func makePodTemplate(bind *v1alpha1.Bind, namespace string, serviceAccountName string, podName string, spec *v1alpha1.EventSourceSpec, op BindOperation, trigger EventTrigger, route string, bindContext BindContext) (*corev1.PodTemplateSpec, error) {
+func makePodTemplate(bind *v1alpha1.Bind, spec *v1alpha1.EventSourceSpec, op BindOperation, trigger EventTrigger, route string, bindContext BindContext) (*corev1.PodTemplateSpec, error) {
 	marshalledBindContext, err := json.Marshal(bindContext)
 	if err != nil {
 		return nil, err
@@ -116,11 +116,11 @@ func makePodTemplate(bind *v1alpha1.Bind, namespace string, serviceAccountName s
 			},
 		},
 		Spec: corev1.PodSpec{
-			ServiceAccountName: serviceAccountName,
+			ServiceAccountName: bind.Spec.ServiceAccountName,
 			RestartPolicy:      corev1.RestartPolicyNever,
 			Containers: []corev1.Container{
 				corev1.Container{
-					Name:            podName,
+					Name:            "binder",
 					Image:           spec.Image,
 					ImagePullPolicy: "Always",
 					Env: []corev1.EnvVar{
