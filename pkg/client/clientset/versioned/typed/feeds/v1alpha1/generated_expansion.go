@@ -1,5 +1,5 @@
 /*
-Copyright 2018 Google, Inc. All rights reserved.
+Copyright 2018 The Knative Authors
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -18,8 +18,12 @@ limitations under the License.
 
 package v1alpha1
 
-type BindExpansion interface{}
+type ClusterEventSourceExpansion interface{}
+
+type ClusterEventTypeExpansion interface{}
 
 type EventSourceExpansion interface{}
 
 type EventTypeExpansion interface{}
+
+type FeedExpansion interface{}

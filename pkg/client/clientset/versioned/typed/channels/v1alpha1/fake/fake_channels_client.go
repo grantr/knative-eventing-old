@@ -1,5 +1,5 @@
 /*
-Copyright 2018 Google, Inc. All rights reserved.
+Copyright 2018 The Knative Authors
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -34,6 +34,10 @@ func (c *FakeChannelsV1alpha1) Buses(namespace string) v1alpha1.BusInterface {
 
 func (c *FakeChannelsV1alpha1) Channels(namespace string) v1alpha1.ChannelInterface {
 	return &FakeChannels{c, namespace}
+}
+
+func (c *FakeChannelsV1alpha1) ClusterBuses() v1alpha1.ClusterBusInterface {
+	return &FakeClusterBuses{c}
 }
 
 func (c *FakeChannelsV1alpha1) Subscriptions(namespace string) v1alpha1.SubscriptionInterface {

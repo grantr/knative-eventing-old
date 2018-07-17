@@ -1,5 +1,5 @@
 /*
-Copyright 2018 Google, Inc. All rights reserved.
+Copyright 2018 The Knative Authors
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -19,7 +19,9 @@ package controller
 import (
 	kubeinformers "k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 
+	servingclientset "github.com/knative/serving/pkg/client/clientset/versioned"
 	servinginformers "github.com/knative/serving/pkg/client/informers/externalversions"
 
 	clientset "github.com/knative/eventing/pkg/client/clientset/versioned"
@@ -30,4 +32,12 @@ type Interface interface {
 	Run(threadiness int, stopCh <-chan struct{}) error
 }
 
-type Constructor func(kubernetes.Interface, clientset.Interface, kubeinformers.SharedInformerFactory, informers.SharedInformerFactory, servinginformers.SharedInformerFactory) Interface
+type Constructor func(
+	kubernetes.Interface,
+	clientset.Interface,
+	servingclientset.Interface,
+	*rest.Config,
+	kubeinformers.SharedInformerFactory,
+	informers.SharedInformerFactory,
+	servinginformers.SharedInformerFactory,
+) Interface

@@ -1,4 +1,4 @@
-# Copyright 2018 Google, Inc. All rights reserved.
+# Copyright 2018 The Knative Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,18 +14,20 @@
 apiVersion: apps/v1beta1
 kind: Deployment
 metadata:
-  name: bind-controller
-  namespace: knative-eventing-system
+  name: eventing-controller
+  namespace: knative-eventing
 spec:
   replicas: 1
   template:
     metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
       labels:
-        app: bind-controller
+        app: eventing-controller
     spec:
-      serviceAccountName: bind-controller
+      serviceAccountName: eventing-controller
       containers:
-      - name: bind-controller
+      - name: eventing-controller
         image: github.com/knative/eventing/cmd/controller
         args: [
           "-logtostderr",

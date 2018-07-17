@@ -1,5 +1,5 @@
 /*
-Copyright 2018 Google, Inc. All rights reserved.
+Copyright 2018 The Knative Authors
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -24,10 +24,12 @@ import (
 
 	"github.com/golang/glog"
 	v1alpha1 "github.com/knative/eventing/pkg/apis/feeds/v1alpha1"
-	"k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+
+	batchv1 "k8s.io/api/batch/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type ContainerEventSource struct {
@@ -37,107 +39,167 @@ type ContainerEventSource struct {
 	// Namespace to run the container in
 	Namespace string
 
-	// Binding for this operation
-	Binding *v1alpha1.Bind
+	// ServiceAccount to run as
+	ServiceAccountName string
+
+	// Feed for this operation
+	Feed *v1alpha1.Feed
 
 	// EventSourceSpec for the actual underlying source
 	EventSourceSpec *v1alpha1.EventSourceSpec
 }
 
-func NewContainerEventSource(bind *v1alpha1.Bind, kubeclientset kubernetes.Interface, spec *v1alpha1.EventSourceSpec, namespace string) EventSource {
+func NewContainerEventSource(feed *v1alpha1.Feed, kubeclientset kubernetes.Interface, spec *v1alpha1.EventSourceSpec) EventSource {
 	return &ContainerEventSource{
-		kubeclientset:   kubeclientset,
-		Namespace:       namespace,
-		Binding:         bind,
-		EventSourceSpec: spec,
+		kubeclientset:      kubeclientset,
+		Namespace:          feed.Namespace,
+		ServiceAccountName: feed.Spec.ServiceAccountName,
+		Feed:               feed,
+		EventSourceSpec:    spec,
 	}
 }
 
-func (t *ContainerEventSource) Bind(trigger EventTrigger, route string) (*BindContext, error) {
-	pod, err := MakePod(t.Binding, t.Namespace, "bind-controller", "binder", t.EventSourceSpec, Bind, trigger, route, BindContext{})
+func (t *ContainerEventSource) StartFeed(trigger EventTrigger, route string) (*FeedContext, error) {
+	job, err := MakeJob(t.Feed, t.EventSourceSpec, StartFeed, trigger, route, FeedContext{})
 	if err != nil {
-		glog.Infof("failed to make pod: %s", err)
+		glog.Errorf("failed to make job: %s", err)
 		return nil, err
 	}
-	bc, err := t.run(pod, true)
+	bc, err := t.run(job, true)
 	if err != nil {
-		glog.Infof("failed to bind: %s", err)
+		glog.Errorf("failed to run feed start job: %s", err)
 	}
-	// Try to delete the pod even it failed to run
-	delErr := t.delete(pod)
+	// Try to delete the job even if it failed to run
+	delErr := t.delete(job)
 	if delErr != nil {
-		glog.Infof("failed to delete the pod after running: %s", delErr)
+		glog.Errorf("failed to delete the job after running: %s", delErr)
 	}
 	return bc, err
 }
 
-func (t *ContainerEventSource) Unbind(trigger EventTrigger, bindContext BindContext) error {
-	pod, err := MakePod(t.Binding, t.Namespace, "bind-controller", "binder", t.EventSourceSpec, Unbind, trigger, "", bindContext)
+func (t *ContainerEventSource) StopFeed(trigger EventTrigger, feedContext FeedContext) error {
+	job, err := MakeJob(t.Feed, t.EventSourceSpec, StopFeed, trigger, "", FeedContext{})
 	if err != nil {
-		glog.Infof("failed to make pod: %s", err)
+		glog.Errorf("failed to make job: %s", err)
 		return err
 	}
-	_, err = t.run(pod, false)
+	_, err = t.run(job, false)
 	if err != nil {
-		glog.Infof("failed to unbind pod: %s", err)
+		glog.Errorf("failed to run feed stop job: %s", err)
 	}
-	// Try to delete the pod anyways
-	delErr := t.delete(pod)
+	// Try to delete the job anyways
+	delErr := t.delete(job)
 	if delErr != nil {
-		glog.Infof("failed to delete the pod after running: %s", delErr)
+		glog.Errorf("failed to delete the job after running: %s", delErr)
 	}
 	return err
 }
 
-func (t *ContainerEventSource) run(pod *v1.Pod, parseLogs bool) (*BindContext, error) {
-	p := t.kubeclientset.CoreV1().Pods(pod.ObjectMeta.Namespace)
-	_, err := p.Create(pod)
+func (t *ContainerEventSource) run(job *batchv1.Job, parseLogs bool) (*FeedContext, error) {
+	jobClient := t.kubeclientset.BatchV1().Jobs(job.Namespace)
+	_, err := jobClient.Create(job)
 	if err != nil {
-		return &BindContext{}, err
+		return &FeedContext{}, err
 	}
 
 	// TODO replace with a construct similar to Build by watching for pod
 	// notifications and use channels for unblocking.
 	for {
 		time.Sleep(300 * time.Millisecond)
-		glog.Infof("Checking pod...")
-		myPod, err := p.Get(pod.ObjectMeta.Name, meta_v1.GetOptions{})
+		glog.Infof("Checking job...")
+		job, err := jobClient.Get(job.Name, metav1.GetOptions{})
 		if err != nil {
 			return nil, err
 		}
-		if myPod.Status.Phase == v1.PodFailed {
-			glog.Infof("event source pod failed: %s", err)
-			return nil, fmt.Errorf("Pod failed")
+
+		if IsJobFailed(job) {
+			glog.Errorf("event source job failed: %s", err)
+			return nil, fmt.Errorf("Job failed: %s", err)
 		}
-		if myPod.Status.Phase == v1.PodSucceeded {
-			glog.Infof("Pod Succeeded")
-			for _, cs := range myPod.Status.ContainerStatuses {
-				if cs.State.Terminated != nil && cs.State.Terminated.Message != "" {
-					decodedContext, _ := base64.StdEncoding.DecodeString(cs.State.Terminated.Message)
-					glog.Infof("Decoded to %q", decodedContext)
-					var ret BindContext
-					err = json.Unmarshal(decodedContext, &ret)
-					if err != nil {
-						glog.Infof("Failed to unmarshal context: %s", err)
-						return nil, err
+
+		if IsJobComplete(job) {
+			glog.Infof("event source job complete")
+
+			pods, err := t.getJobPods(job)
+			if err != nil {
+				glog.Errorf("Failed to get job pods: %s", err)
+			}
+
+			for _, p := range pods {
+				if p.Status.Phase == corev1.PodSucceeded {
+					glog.Infof("Pod succeeded: %s", p.Name)
+					if msg := GetFirstTerminationMessage(&p); msg != "" {
+						decodedContext, _ := base64.StdEncoding.DecodeString(msg)
+						glog.Infof("Decoded to %q", decodedContext)
+						var ret FeedContext
+						err = json.Unmarshal(decodedContext, &ret)
+						if err != nil {
+							glog.Errorf("Failed to unmarshal context: %s", err)
+							return nil, err
+						}
+						return &ret, nil
 					}
-					return &ret, nil
 				}
 			}
-			return &BindContext{}, nil
+
+			return &FeedContext{}, nil
 		}
 	}
 }
 
-func (t *ContainerEventSource) delete(pod *v1.Pod) error {
-	p := t.kubeclientset.CoreV1().Pods(pod.ObjectMeta.Namespace)
-	err := p.Delete(pod.ObjectMeta.Name, &meta_v1.DeleteOptions{})
+func (t *ContainerEventSource) delete(job *batchv1.Job) error {
+	jobClient := t.kubeclientset.BatchV1().Jobs(job.Namespace)
+	backgroundPolicy := metav1.DeletePropagationBackground
+	err := jobClient.Delete(job.Name, &metav1.DeleteOptions{
+		PropagationPolicy: &backgroundPolicy,
+	})
 	if err != nil {
 		if errors.IsNotFound(err) {
-			glog.Infof("Pod has already been deleted")
+			glog.Infof("Job has already been deleted")
 			return nil
 		}
-		glog.Infof("failed to delete pod: %s", err)
+		glog.Errorf("failed to delete job: %s", err)
 	}
 	return err
+}
+
+func (t *ContainerEventSource) getJobPods(job *batchv1.Job) ([]corev1.Pod, error) {
+	selector, err := metav1.LabelSelectorAsSelector(job.Spec.Selector)
+	if err != nil {
+		return nil, err
+	}
+
+	podClient := t.kubeclientset.CoreV1().Pods(job.Namespace)
+	pods, err := podClient.List(metav1.ListOptions{LabelSelector: selector.String()})
+	if err != nil {
+		return nil, err
+	}
+	return pods.Items, nil
+}
+
+func IsJobFailed(job *batchv1.Job) bool {
+	for _, c := range job.Status.Conditions {
+		if c.Type == batchv1.JobFailed && c.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+	return false
+}
+
+func IsJobComplete(job *batchv1.Job) bool {
+	for _, c := range job.Status.Conditions {
+		if c.Type == batchv1.JobComplete && c.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+	return false
+}
+
+func GetFirstTerminationMessage(pod *corev1.Pod) string {
+	for _, cs := range pod.Status.ContainerStatuses {
+		if cs.State.Terminated != nil && cs.State.Terminated.Message != "" {
+			return cs.State.Terminated.Message
+		}
+	}
+	return ""
 }

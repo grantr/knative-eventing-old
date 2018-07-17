@@ -1,5 +1,5 @@
 /*
-Copyright 2018 Google, Inc. All rights reserved.
+Copyright 2018 The Knative Authors
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -21,11 +21,11 @@ const (
 	EventTriggerKey string = "EVENT_TRIGGER"
 )
 
-type BindContext struct {
+type FeedContext struct {
 	Context map[string]interface{}
 }
 
 type EventSource interface {
-	Bind(trigger EventTrigger, route string) (*BindContext, error)
-	Unbind(trigger EventTrigger, bindContext BindContext) error
+	StartFeed(trigger EventTrigger, route string) (*FeedContext, error)
+	StopFeed(trigger EventTrigger, feedContext FeedContext) error
 }

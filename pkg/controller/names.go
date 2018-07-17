@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 the original author or authors.
+ * Copyright 2018 The Knative Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,14 +38,30 @@ func BusDispatcherServiceName(busName string) string {
 	return fmt.Sprintf("%s-bus", busName)
 }
 
-func ChannelRouteRuleName(channelName string) string {
-	return fmt.Sprintf("%s-channel", channelName)
+func ClusterBusProvisionerDeploymentName(clusterBusName string) string {
+	return fmt.Sprintf("%s-clusterbus-provisioner", clusterBusName)
 }
 
-func ChannelIngressName(channelName string) string {
+func ClusterBusDispatcherDeploymentName(clusterBusName string) string {
+	return fmt.Sprintf("%s-clusterbus", clusterBusName)
+}
+
+func ClusterBusDispatcherServiceName(clusterBusName string) string {
+	return fmt.Sprintf("%s-clusterbus", clusterBusName)
+}
+
+func ChannelVirtualServiceName(channelName string) string {
 	return fmt.Sprintf("%s-channel", channelName)
 }
 
 func ChannelServiceName(channelName string) string {
 	return fmt.Sprintf("%s-channel", channelName)
+}
+
+func ChannelHostName(channelName, namespace string) string {
+	return fmt.Sprintf("%s.%s.channels.cluster.local", channelName, namespace)
+}
+
+func ServiceHostName(serviceName, namespace string) string {
+	return fmt.Sprintf("%s.%s.svc.cluster.local", serviceName, namespace)
 }

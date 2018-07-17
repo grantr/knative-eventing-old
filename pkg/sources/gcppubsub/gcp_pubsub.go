@@ -1,5 +1,5 @@
 /*
-Copyright 2018 Google, Inc. All rights reserved.
+Copyright 2018 The Knative Authors
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -49,22 +49,27 @@ type GCPPubSubEventSource struct {
 	// kubeclientset is a standard kubernetes clientset
 	kubeclientset kubernetes.Interface
 	image         string
+	// namespace where the feed is created
+	feedNamespace string
+	// serviceAccount that the container runs as. Launches Receive Adapter with the
+	// same Service Account
+	feedServiceAccountName string
 }
 
-func NewGCPPubSubEventSource(kubeclientset kubernetes.Interface, image string) sources.EventSource {
+func NewGCPPubSubEventSource(kubeclientset kubernetes.Interface, feedNamespace string, feedServiceAccountName string, image string) sources.EventSource {
 	glog.Infof("Image: %q", image)
-	return &GCPPubSubEventSource{kubeclientset: kubeclientset, image: image}
+	return &GCPPubSubEventSource{kubeclientset: kubeclientset, feedNamespace: feedNamespace, feedServiceAccountName: feedServiceAccountName, image: image}
 }
 
-func (t *GCPPubSubEventSource) Unbind(trigger sources.EventTrigger, bindContext sources.BindContext) error {
-	glog.Infof("Unbinding GCP PUBSUB with context %+v", bindContext)
+func (t *GCPPubSubEventSource) StopFeed(trigger sources.EventTrigger, feedContext sources.FeedContext) error {
+	glog.Infof("Stopping GCP PUBSUB Feed with context %+v", feedContext)
 
 	projectID := trigger.Parameters[projectIDKey].(string)
 
-	deploymentName := bindContext.Context[deployment].(string)
-	subscriptionName := bindContext.Context[subscription].(string)
+	deploymentName := feedContext.Context[deployment].(string)
+	subscriptionName := feedContext.Context[subscription].(string)
 
-	err := t.deleteWatcher("knative-eventing-system", deploymentName)
+	err := t.deleteWatcher(t.feedNamespace, deploymentName)
 	if err != nil {
 		glog.Warningf("Failed to delete deployment: %s", err)
 		return err
@@ -92,8 +97,8 @@ func (t *GCPPubSubEventSource) Unbind(trigger sources.EventTrigger, bindContext 
 	return nil
 }
 
-func (t *GCPPubSubEventSource) Bind(trigger sources.EventTrigger, route string) (*sources.BindContext, error) {
-	glog.Infof("CREATING GCP PUBSUB binding")
+func (t *GCPPubSubEventSource) StartFeed(trigger sources.EventTrigger, route string) (*sources.FeedContext, error) {
+	glog.Infof("CREATING GCP PUBSUB feed")
 
 	projectID := trigger.Parameters[projectIDKey].(string)
 	topic := trigger.Parameters["topic"].(string)
@@ -126,7 +131,7 @@ func (t *GCPPubSubEventSource) Bind(trigger sources.EventTrigger, route string) 
 
 	// Create actual watcher
 	deploymentName := subscriptionName
-	err = t.createWatcher("knative-eventing-system", deploymentName, t.image, projectID, subscriptionName, route)
+	err = t.createWatcher(deploymentName, t.image, projectID, subscriptionName, route)
 	if err != nil {
 		glog.Infof("Failed to create deployment: %v", err)
 
@@ -139,7 +144,7 @@ func (t *GCPPubSubEventSource) Bind(trigger sources.EventTrigger, route string) 
 		return nil, err
 	}
 
-	return &sources.BindContext{
+	return &sources.FeedContext{
 		Context: map[string]interface{}{
 			subscription: subscriptionName,
 			deployment:   deploymentName,
@@ -147,8 +152,8 @@ func (t *GCPPubSubEventSource) Bind(trigger sources.EventTrigger, route string) 
 
 }
 
-func (t *GCPPubSubEventSource) createWatcher(namespace string, deploymentName string, image string, projectID string, subscription string, route string) error {
-	dc := t.kubeclientset.AppsV1().Deployments(namespace)
+func (t *GCPPubSubEventSource) createWatcher(deploymentName string, image string, projectID string, subscription string, route string) error {
+	dc := t.kubeclientset.AppsV1().Deployments(t.feedNamespace)
 
 	// First, check if deployment exists already.
 	if _, err := dc.Get(deploymentName, metav1.GetOptions{}); err != nil {
@@ -162,9 +167,9 @@ func (t *GCPPubSubEventSource) createWatcher(namespace string, deploymentName st
 		return nil
 	}
 
-	// TODO: Create ownerref to the binding so when the binding goes away deployment
+	// TODO: Create ownerref to the feed so when the feed goes away deployment
 	// gets removed. Currently we manually delete the deployment.
-	deployment := MakeWatcherDeployment(namespace, deploymentName, "bind-controller", image, projectID, subscription, route)
+	deployment := MakeWatcherDeployment(t.feedNamespace, deploymentName, t.feedServiceAccountName, image, projectID, subscription, route)
 	_, createErr := dc.Create(deployment)
 	return createErr
 }
@@ -194,6 +199,9 @@ func main() {
 
 	decodedParameters, _ := base64.StdEncoding.DecodeString(os.Getenv(sources.EventSourceParametersKey))
 
+	feedNamespace := os.Getenv(sources.FeedNamespaceKey)
+	feedServiceAccountName := os.Getenv(sources.FeedServiceAccountKey)
+
 	var p parameters
 	err := json.Unmarshal(decodedParameters, &p)
 	if err != nil {
@@ -210,6 +218,6 @@ func main() {
 		glog.Fatalf("Error building kubernetes clientset: %s", err.Error())
 	}
 
-	sources.RunEventSource(NewGCPPubSubEventSource(kubeClient, p.Image))
+	sources.RunEventSource(NewGCPPubSubEventSource(kubeClient, feedNamespace, feedServiceAccountName, p.Image))
 	log.Printf("Done...")
 }

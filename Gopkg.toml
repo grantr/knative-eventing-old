@@ -54,21 +54,21 @@ required = [
   name = "gopkg.in/yaml.v2"
   version = "v2.2.1"
 
-[[constraint]]
+[[override]]
   name = "k8s.io/api"
-  version = "kubernetes-1.10.0"
+  version = "kubernetes-1.10.1"
 
-[[constraint]]
+[[override]]
   name = "k8s.io/apimachinery"
-  version = "kubernetes-1.10.0"
+  version = "kubernetes-1.10.1"
 
-[[constraint]]
+[[override]]
   name = "k8s.io/code-generator"
-  version = "kubernetes-1.10.0"
+  version = "kubernetes-1.10.1"
 
-[[constraint]]
+[[override]]
   name = "k8s.io/client-go"
-  version = "kubernetes-1.10.0"
+  version = "kubernetes-1.10.1"
 
 [[override]]
   name = "github.com/golang/protobuf"
@@ -84,5 +84,14 @@ required = [
 
 [[constraint]]
   name = "github.com/knative/serving"
-  # HEAD as of 2018-06-01
-  revision = "a67361c49ec4a957f60d86de05f168a4b41b72ba"
+  # HEAD as of 2018-07-16
+  revision = "2326173b13899c32896caf526a318a8b30033b3e"
+
+[[override]]
+  name = "github.com/Shopify/sarama"
+  revision = "46cf3e2cf1acef7876068f66cf69ec31aad2d0b2" # includes higher level admin client
+#  version = "1.17.0"
+
+[[constraint]]
+  name = "github.com/bsm/sarama-cluster"
+  version = "2.1.13"

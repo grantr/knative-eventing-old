@@ -1,5 +1,5 @@
 /*
-Copyright 2018 Google, Inc. All rights reserved.
+Copyright 2018 The Knative Authors
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -26,8 +26,8 @@ import (
 	versioned "github.com/knative/eventing/pkg/client/clientset/versioned"
 	channels "github.com/knative/eventing/pkg/client/informers/externalversions/channels"
 	feeds "github.com/knative/eventing/pkg/client/informers/externalversions/feeds"
+	flows "github.com/knative/eventing/pkg/client/informers/externalversions/flows"
 	internalinterfaces "github.com/knative/eventing/pkg/client/informers/externalversions/internalinterfaces"
-	istio "github.com/knative/eventing/pkg/client/informers/externalversions/istio"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
@@ -127,7 +127,7 @@ type SharedInformerFactory interface {
 
 	Channels() channels.Interface
 	Feeds() feeds.Interface
-	Config() istio.Interface
+	Flows() flows.Interface
 }
 
 func (f *sharedInformerFactory) Channels() channels.Interface {
@@ -138,6 +138,6 @@ func (f *sharedInformerFactory) Feeds() feeds.Interface {
 	return feeds.New(f, f.namespace, f.tweakListOptions)
 }
 
-func (f *sharedInformerFactory) Config() istio.Interface {
-	return istio.New(f, f.namespace, f.tweakListOptions)
+func (f *sharedInformerFactory) Flows() flows.Interface {
+	return flows.New(f, f.namespace, f.tweakListOptions)
 }

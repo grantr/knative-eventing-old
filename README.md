@@ -23,7 +23,7 @@ This repo depends on [knative/serving](https://github.com/knative/serving) and
 together with [knative/build](https://github.com/knative/build) provides a
 complete serverless platform.
 
-The primary goal of *eventing* is interoperabilty; therefore, we expect to
+The primary goal of *eventing* is interoperability; therefore, we expect to
 provide common libraries that can be used in other systems to emit or consume
 events.
 
@@ -32,13 +32,30 @@ events.
 
 We'll be tracking the CloudEvents nomenclature as much as possible; however,
 that is in flux and many of the needed terms are outside of the current scope
-of the specification. At the moment, in our code and documentation, we may use
-the terms "binding" and "flow" at different times to represent the concept of
+of the specification. We use the term "feed" to represent the concept of
 attaching an event (or filtered event stream via a "trigger) to an action.
 
 # Getting Started
 
-* [Setup Knative](https://github.com/knative/serving)
-* [Setup Binding](./DEVELOPMENT.md)
+* [Setup Knative Serving](https://github.com/knative/serving)
+* [Setup Knative Eventing](./DEVELOPMENT.md)
 * [Run samples](./sample/README.md)
 
+
+# Kubernetes Extensions
+
+Eventing extends Kubernetes with Custom Resource Definitions (CRDs). The
+following Custom Resources (CRs) are used in the production and consumption of
+events:
+
+#### Channels
+
+ - Bus, ClusterBus
+ - Channel
+ - Subscription
+
+#### Feeds
+
+ - Feed
+ - EventSource
+ - EventType

@@ -1,5 +1,5 @@
 /*
-Copyright 2018 Google, Inc. All rights reserved.
+Copyright 2018 The Knative Authors
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -33,6 +33,10 @@ type ChannelListerExpansion interface{}
 // ChannelNamespaceListerExpansion allows custom methods to be added to
 // ChannelNamespaceLister.
 type ChannelNamespaceListerExpansion interface{}
+
+// ClusterBusListerExpansion allows custom methods to be added to
+// ClusterBusLister.
+type ClusterBusListerExpansion interface{}
 
 // SubscriptionListerExpansion allows custom methods to be added to
 // SubscriptionLister.

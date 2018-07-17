@@ -1,4 +1,4 @@
-# Copyright 2018 Google, Inc. All rights reserved.
+# Copyright 2018 The Knative Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,5 +17,11 @@ metadata:
   name: knative-channels-bus
 rules:
 - apiGroups: ["channels.knative.dev"]
-  resources: ["buses", "channels", "subscriptions"]
+  resources: ["buses", "clusterbuses"]
   verbs: ["get", "watch", "list"]
+- apiGroups: ["channels.knative.dev"]
+  resources: ["channels", "subscriptions"]
+  verbs: ["get", "watch", "list", "update", "patch"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "patch"]

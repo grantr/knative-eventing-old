@@ -1,5 +1,5 @@
 /*
-Copyright 2018 Google, Inc. All rights reserved.
+Copyright 2018 The Knative Authors
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -44,19 +44,24 @@ type K8SEventsEventSource struct {
 	// kubeclientset is a standard kubernetes clientset
 	kubeclientset kubernetes.Interface
 	image         string
+	// namespace where the feed is created
+	feedNamespace string
+	// serviceAccount that the container runs as. Launches Receive Adapter with the
+	// same Service Account
+	feedServiceAccountName string
 }
 
-func NewK8SEventsEventSource(kubeclientset kubernetes.Interface, image string) sources.EventSource {
+func NewK8SEventsEventSource(kubeclientset kubernetes.Interface, feedNamespace string, feedServiceAccountName string, image string) sources.EventSource {
 	glog.Infof("Image: %q", image)
-	return &K8SEventsEventSource{kubeclientset: kubeclientset, image: image}
+	return &K8SEventsEventSource{kubeclientset: kubeclientset, feedNamespace: feedNamespace, feedServiceAccountName: feedServiceAccountName, image: image}
 }
 
-func (t *K8SEventsEventSource) Unbind(trigger sources.EventTrigger, bindContext sources.BindContext) error {
-	glog.Infof("Unbinding K8S Events with context %+v", bindContext)
+func (t *K8SEventsEventSource) StopFeed(trigger sources.EventTrigger, feedContext sources.FeedContext) error {
+	glog.Infof("Stopping K8S Events feed with context %+v", feedContext)
 
-	deploymentName := bindContext.Context[deployment].(string)
+	deploymentName := feedContext.Context[deployment].(string)
 
-	err := t.deleteWatcher("knative-eventing-system", deploymentName)
+	err := t.deleteWatcher(deploymentName)
 	if err != nil {
 		glog.Warningf("Failed to delete deployment: %s", err)
 		return err
@@ -64,8 +69,8 @@ func (t *K8SEventsEventSource) Unbind(trigger sources.EventTrigger, bindContext 
 	return nil
 }
 
-func (t *K8SEventsEventSource) Bind(trigger sources.EventTrigger, route string) (*sources.BindContext, error) {
-	glog.Infof("CREATING K8S Event binding")
+func (t *K8SEventsEventSource) StartFeed(trigger sources.EventTrigger, route string) (*sources.FeedContext, error) {
+	glog.Infof("CREATING K8S Event feed")
 
 	namespace := trigger.Parameters["namespace"].(string)
 
@@ -77,13 +82,13 @@ func (t *K8SEventsEventSource) Bind(trigger sources.EventTrigger, route string) 
 
 	// Create actual watcher
 	deploymentName := subscriptionName
-	err = t.createWatcher("knative-eventing-system", deploymentName, t.image, namespace, route)
+	err = t.createWatcher(deploymentName, t.image, namespace, route)
 	if err != nil {
 		glog.Infof("Failed to create deployment: %v", err)
 		return nil, err
 	}
 
-	return &sources.BindContext{
+	return &sources.FeedContext{
 		Context: map[string]interface{}{
 			subscription: subscriptionName,
 			deployment:   deploymentName,
@@ -91,8 +96,8 @@ func (t *K8SEventsEventSource) Bind(trigger sources.EventTrigger, route string) 
 
 }
 
-func (t *K8SEventsEventSource) createWatcher(namespace string, deploymentName string, image string, eventNamespace string, route string) error {
-	dc := t.kubeclientset.AppsV1().Deployments(namespace)
+func (t *K8SEventsEventSource) createWatcher(deploymentName string, image string, eventNamespace string, route string) error {
+	dc := t.kubeclientset.AppsV1().Deployments(t.feedNamespace)
 
 	// First, check if deployment exists already.
 	if _, err := dc.Get(deploymentName, metav1.GetOptions{}); err != nil {
@@ -106,15 +111,15 @@ func (t *K8SEventsEventSource) createWatcher(namespace string, deploymentName st
 		return nil
 	}
 
-	// TODO: Create ownerref to the binding so when the binding goes away deployment
+	// TODO: Create ownerref to the feed so when the feed goes away deployment
 	// gets removed. Currently we manually delete the deployment.
-	deployment := MakeWatcherDeployment(namespace, deploymentName, "bind-controller", image, eventNamespace, route)
+	deployment := MakeWatcherDeployment(t.feedNamespace, deploymentName, t.feedServiceAccountName, image, eventNamespace, route)
 	_, createErr := dc.Create(deployment)
 	return createErr
 }
 
-func (t *K8SEventsEventSource) deleteWatcher(namespace string, deploymentName string) error {
-	dc := t.kubeclientset.AppsV1().Deployments(namespace)
+func (t *K8SEventsEventSource) deleteWatcher(deploymentName string) error {
+	dc := t.kubeclientset.AppsV1().Deployments(t.feedNamespace)
 
 	// First, check if deployment exists already.
 	if _, err := dc.Get(deploymentName, metav1.GetOptions{}); err != nil {
@@ -138,6 +143,9 @@ func main() {
 
 	decodedParameters, _ := base64.StdEncoding.DecodeString(os.Getenv(sources.EventSourceParametersKey))
 
+	feedNamespace := os.Getenv(sources.FeedNamespaceKey)
+	feedServiceAccountName := os.Getenv(sources.FeedServiceAccountKey)
+
 	var p parameters
 	err := json.Unmarshal(decodedParameters, &p)
 	if err != nil {
@@ -154,6 +162,6 @@ func main() {
 		glog.Fatalf("Error building kubernetes clientset: %v", err.Error())
 	}
 
-	sources.RunEventSource(NewK8SEventsEventSource(kubeClient, p.Image))
+	sources.RunEventSource(NewK8SEventsEventSource(kubeClient, feedNamespace, feedServiceAccountName, p.Image))
 	log.Printf("Done...")
 }

@@ -1,5 +1,5 @@
 /*
-Copyright 2018 Google, Inc. All rights reserved.
+Copyright 2018 The Knative Authors
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -24,8 +24,8 @@ import (
 	fakechannelsv1alpha1 "github.com/knative/eventing/pkg/client/clientset/versioned/typed/channels/v1alpha1/fake"
 	feedsv1alpha1 "github.com/knative/eventing/pkg/client/clientset/versioned/typed/feeds/v1alpha1"
 	fakefeedsv1alpha1 "github.com/knative/eventing/pkg/client/clientset/versioned/typed/feeds/v1alpha1/fake"
-	configv1alpha2 "github.com/knative/eventing/pkg/client/clientset/versioned/typed/istio/v1alpha2"
-	fakeconfigv1alpha2 "github.com/knative/eventing/pkg/client/clientset/versioned/typed/istio/v1alpha2/fake"
+	flowsv1alpha1 "github.com/knative/eventing/pkg/client/clientset/versioned/typed/flows/v1alpha1"
+	fakeflowsv1alpha1 "github.com/knative/eventing/pkg/client/clientset/versioned/typed/flows/v1alpha1/fake"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/discovery"
@@ -94,12 +94,12 @@ func (c *Clientset) Feeds() feedsv1alpha1.FeedsV1alpha1Interface {
 	return &fakefeedsv1alpha1.FakeFeedsV1alpha1{Fake: &c.Fake}
 }
 
-// ConfigV1alpha2 retrieves the ConfigV1alpha2Client
-func (c *Clientset) ConfigV1alpha2() configv1alpha2.ConfigV1alpha2Interface {
-	return &fakeconfigv1alpha2.FakeConfigV1alpha2{Fake: &c.Fake}
+// FlowsV1alpha1 retrieves the FlowsV1alpha1Client
+func (c *Clientset) FlowsV1alpha1() flowsv1alpha1.FlowsV1alpha1Interface {
+	return &fakeflowsv1alpha1.FakeFlowsV1alpha1{Fake: &c.Fake}
 }
 
-// Config retrieves the ConfigV1alpha2Client
-func (c *Clientset) Config() configv1alpha2.ConfigV1alpha2Interface {
-	return &fakeconfigv1alpha2.FakeConfigV1alpha2{Fake: &c.Fake}
+// Flows retrieves the FlowsV1alpha1Client
+func (c *Clientset) Flows() flowsv1alpha1.FlowsV1alpha1Interface {
+	return &fakeflowsv1alpha1.FakeFlowsV1alpha1{Fake: &c.Fake}
 }

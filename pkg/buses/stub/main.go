@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 the original author or authors.
+ * Copyright 2018 The Knative Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,22 +17,18 @@
 package main
 
 import (
-	"bytes"
 	"flag"
-	"io/ioutil"
-	"net/http"
-	"net/url"
+	"fmt"
 	"os"
-	"strings"
-	"time"
 
 	"github.com/golang/glog"
 	channelsv1alpha1 "github.com/knative/eventing/pkg/apis/channels/v1alpha1"
 	"github.com/knative/eventing/pkg/buses"
-	clientset "github.com/knative/eventing/pkg/client/clientset/versioned"
-	informers "github.com/knative/eventing/pkg/client/informers/externalversions"
 	"github.com/knative/eventing/pkg/signals"
-	"k8s.io/client-go/tools/clientcmd"
+)
+
+const (
+	threadsPerMonitor = 1
 )
 
 var (
@@ -40,141 +36,96 @@ var (
 	kubeconfig string
 )
 
+// StubBus is able to broadcast messages to multiple subscribers, but does not
+// have any delivery guarentees.
+//
+// The stub bus is commonly used in development and testing, but is often not
+// suiteable for production environments.
 type StubBus struct {
-	name           string
-	monitor        *buses.Monitor
-	client         *http.Client
-	forwardHeaders []string
+	ref        *buses.BusReference
+	monitor    *buses.Monitor
+	receiver   *buses.MessageReceiver
+	dispatcher *buses.MessageDispatcher
 }
 
-func (b *StubBus) handleEvent(res http.ResponseWriter, req *http.Request) {
-	host := req.Host
-	glog.Infof("Received request for %s\n", host)
-	channel, namespace := b.splitChannelName(host)
-	subscriptions := b.monitor.Subscriptions(channel, namespace)
-	if subscriptions == nil {
-		res.WriteHeader(http.StatusNotFound)
-		return
+// NewStubBus creates a stub bus.
+func NewStubBus(ref *buses.BusReference, monitor *buses.Monitor) *StubBus {
+	bus := &StubBus{
+		ref:     ref,
+		monitor: monitor,
 	}
-
-	body, err := ioutil.ReadAll(req.Body)
-	if err != nil {
-		res.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-	res.WriteHeader(http.StatusAccepted)
-
-	if len(*subscriptions) == 0 {
-		glog.Warningf("No subscribers for channel %q\n", channel)
-	}
-
-	safeHeaders := b.safeHeaders(req.Header)
-	safeHeaders.Set("x-bus", b.name)
-	safeHeaders.Set("x-channel", channel)
-	for _, subscription := range *subscriptions {
-		subscriber := subscription.Subscriber
-		glog.Infof("Sending to %q for %q\n", subscriber, channel)
-		go b.dispatchEvent(subscriber, body, safeHeaders)
-	}
+	bus.dispatcher = buses.NewMessageDispatcher()
+	bus.receiver = buses.NewMessageReceiver(bus.receiveMessage)
+	return bus
 }
 
-func (b *StubBus) dispatchEvent(subscriber string, body []byte, headers http.Header) {
-	url := url.URL{
-		Scheme: "http",
-		Host:   subscriber,
-		Path:   "/",
-	}
-	req, err := http.NewRequest(http.MethodPost, url.String(), bytes.NewReader(body))
-	if err != nil {
-		glog.Errorf("Unable to create subscriber request %v", err)
-	}
-	req.Header = headers
-	_, err = b.client.Do(req)
-	if err != nil {
-		glog.Errorf("Unable to complete subscriber request %v", err)
-	}
-}
-
-func (b *StubBus) splitChannelName(host string) (string, string) {
-	chunks := strings.Split(host, ".")
-	channel := chunks[0]
-	namespace := chunks[1]
-	return channel, namespace
-}
-
-func (b *StubBus) safeHeaders(raw http.Header) http.Header {
-	safe := http.Header{}
-	for _, header := range b.forwardHeaders {
-		if value := raw.Get(header); value != "" {
-			safe.Set(header, value)
+// Run starts the bus's monitor and receiver. This function will block until
+// the stop channel receives a message.
+func (b *StubBus) Run(stopCh <-chan struct{}) {
+	go func() {
+		if err := b.monitor.Run(b.ref.Namespace, b.ref.Name, 1, stopCh); err != nil {
+			glog.Fatalf("Error running monitor: %s", err.Error())
 		}
-	}
-	return safe
+	}()
+	b.monitor.WaitForCacheSync(stopCh)
+	b.receiver.Run(stopCh)
 }
 
-func NewStubBus(name string, monitor *buses.Monitor) *StubBus {
-	forwardHeaders := []string{
-		"content-type",
-		"x-request-id",
-		"x-b3-traceid",
-		"x-b3-spanid",
-		"x-b3-parentspanid",
-		"x-b3-sampled",
-		"x-b3-flags",
-		"x-ot-span-context",
+// receiveMessage receives new messages for the bus from the message receiver,
+// looks up active subscriptions for the channel and dispatches the message to
+// each subscriber.
+func (b *StubBus) receiveMessage(channel *buses.ChannelReference, message *buses.Message) error {
+	subscriptions := b.monitor.Subscriptions(channel.Name, channel.Namespace)
+	if subscriptions == nil {
+		return buses.ErrUnknownChannel
 	}
-
-	bus := StubBus{
-		name:           name,
-		monitor:        monitor,
-		client:         &http.Client{},
-		forwardHeaders: forwardHeaders,
+	for _, subscription := range *subscriptions {
+		go b.dispatchMessage(subscription, channel, message)
 	}
+	return nil
+}
 
-	return &bus
+// dispatchMessage dispatches messages for the bus to a channel's subscriber.
+func (b *StubBus) dispatchMessage(subscription channelsv1alpha1.SubscriptionSpec, channel *buses.ChannelReference, message *buses.Message) {
+	subscriber := subscription.Subscriber
+	glog.Infof("Sending to %q for %q", subscriber, channel)
+	b.dispatcher.DispatchMessage(subscriber, channel.Namespace, message)
 }
 
 func main() {
+	defer glog.Flush()
+
 	flag.Parse()
 
 	// set up signals so we handle the first shutdown signal gracefully
 	stopCh := signals.SetupSignalHandler()
 
-	cfg, err := clientcmd.BuildConfigFromFlags(masterURL, kubeconfig)
-	if err != nil {
-		glog.Fatalf("Error building kubeconfig: %s", err.Error())
+	busReference := &buses.BusReference{
+		Namespace: os.Getenv("BUS_NAMESPACE"),
+		Name:      os.Getenv("BUS_NAME"),
 	}
+	component := fmt.Sprintf("%s-%s", busReference.Name, buses.Dispatcher)
 
-	client, err := clientset.NewForConfig(cfg)
-	if err != nil {
-		glog.Fatalf("Error building clientset: %s", err.Error())
-	}
-
-	name := os.Getenv("BUS_NAME")
-
-	informerFactory := informers.NewSharedInformerFactory(client, time.Second*30)
-	monitor := buses.NewMonitor(name, informerFactory, buses.MonitorEventHandlerFuncs{
-		ProvisionFunc: func(channel channelsv1alpha1.Channel) {
+	monitor := buses.NewMonitor(component, masterURL, kubeconfig, buses.MonitorEventHandlerFuncs{
+		ProvisionFunc: func(channel *channelsv1alpha1.Channel, parameters buses.ResolvedParameters) error {
 			glog.Infof("Provision channel %q\n", channel.Name)
+			return nil
 		},
-		UnprovisionFunc: func(channel channelsv1alpha1.Channel) {
+		UnprovisionFunc: func(channel *channelsv1alpha1.Channel) error {
 			glog.Infof("Unprovision channel %q\n", channel.Name)
+			return nil
 		},
-		SubscribeFunc: func(subscription channelsv1alpha1.Subscription) {
+		SubscribeFunc: func(subscription *channelsv1alpha1.Subscription, parameters buses.ResolvedParameters) error {
 			glog.Infof("Subscribe %q to %q channel\n", subscription.Spec.Subscriber, subscription.Spec.Channel)
+			return nil
 		},
-		UnsubscribeFunc: func(subscription channelsv1alpha1.Subscription) {
+		UnsubscribeFunc: func(subscription *channelsv1alpha1.Subscription) error {
 			glog.Infof("Unubscribe %q from %q channel\n", subscription.Spec.Subscriber, subscription.Spec.Channel)
+			return nil
 		},
 	})
-	bus := NewStubBus(name, monitor)
-
-	go informerFactory.Start(stopCh)
-
-	http.HandleFunc("/", bus.handleEvent)
-	glog.Fatal(http.ListenAndServe(":8080", nil))
-
-	glog.Flush()
+	bus := NewStubBus(busReference, monitor)
+	bus.Run(stopCh)
 }
 
 func init() {
