@@ -173,18 +173,14 @@ type FeedStatus struct {
 type FeedConditionType string
 
 const (
-	// FeedStarted specifies that the feed has started successfully.
-	FeedStarted FeedConditionType = "Started"
-	// FeedFailed specifies that the feed has failed to start.
-	FeedFailed FeedConditionType = "Failed"
-	// FeedInvalid specifies that the given feed specification is invalid.
-	FeedInvalid FeedConditionType = "Invalid"
+	// FeedConditionReady specifies that the feed has started successfully.
+	FeedConditionReady FeedConditionType = "Ready"
 )
 
 // FeedCondition defines a readiness condition for a Feed.
 // See: https://github.com/kubernetes/community/blob/master/contributors/devel/api-conventions.md#typical-status-properties
 type FeedCondition struct {
-	Type FeedConditionType `json:"state"`
+	Type FeedConditionType `json:"type"`
 
 	Status corev1.ConditionStatus `json:"status" description:"status of the condition, one of True, False, Unknown"`
 	// +optional
@@ -213,7 +209,7 @@ func (fs *FeedStatus) GetCondition(t FeedConditionType) *FeedCondition {
 }
 
 func (fs *FeedStatus) SetCondition(new *FeedCondition) {
-	if new == nil {
+	if new == nil || new.Type == "" {
 		return
 	}
 
