@@ -173,12 +173,11 @@ type FeedStatus struct {
 type FeedConditionType string
 
 const (
-	// FeedStarted specifies that the feed has started successfully.
-	FeedStarted FeedConditionType = "Started"
-	// FeedFailed specifies that the feed has failed to start.
-	FeedFailed FeedConditionType = "Failed"
-	// FeedInvalid specifies that the given feed specification is invalid.
-	FeedInvalid FeedConditionType = "Invalid"
+	// FeedConditionReady specifies that the feed has started successfully.
+	FeedConditionReady   FeedConditionType = "Ready"
+	FeedConditionStarted FeedConditionType = "Started"
+	FeedConditionFailed  FeedConditionType = "Failed"
+	FeedConditionInvalid FeedConditionType = "Invalid"
 )
 
 // FeedCondition defines a readiness condition for a Feed.
@@ -213,7 +212,7 @@ func (fs *FeedStatus) GetCondition(t FeedConditionType) *FeedCondition {
 }
 
 func (fs *FeedStatus) SetCondition(new *FeedCondition) {
-	if new == nil {
+	if new == nil || new.Type == "" {
 		return
 	}
 
@@ -240,9 +239,10 @@ func (fs *FeedStatus) RemoveCondition(t FeedConditionType) {
 
 func (fs *FeedStatus) InitializeConditions() {
 	for _, cond := range []FeedConditionType{
-		FeedStarted,
-		FeedFailed,
-		FeedInvalid,
+		FeedConditionReady,
+		FeedConditionStarted,
+		FeedConditionFailed,
+		FeedConditionInvalid,
 	} {
 		if fc := fs.GetCondition(cond); fc == nil {
 			fs.SetCondition(&FeedCondition{
@@ -266,7 +266,12 @@ func (f *Feed) AddFinalizer(value string) {
 func (f *Feed) RemoveFinalizer(value string) {
 	finalizers := sets.NewString(f.GetFinalizers()...)
 	finalizers.Delete(value)
-	f.SetFinalizers(finalizers.List())
+	if finalizers.Len() == 0 {
+		// if no finalizers, set to nil list, not an empty slice.
+		f.SetFinalizers([]string(nil))
+	} else {
+		f.SetFinalizers(finalizers.List())
+	}
 }
 
 // HasFinalizer returns true if a finalizer exists, or false otherwise.
